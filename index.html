@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <base href="https://temple-reservation-system.org/">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sacred Temple Reservation System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
+    <script src="api.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;700&family=Lato:wght@300;400&display=swap');
+
+        :root {
+            --primary-color: #8B4513;
+            --secondary-color: #D2B48C;
+            --background-color: #FFF8DC;
+            --text-color: #4A4A4A;
+        }
+
+        body {
+            font-family: 'Lato', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1, h2 {
+            font-family: 'Cormorant Garamond', serif;
+            color: var(--primary-color);
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-top: 40px;
+        }
+
+        form {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="time"],
+        select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid var(--secondary-color);
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #6B3510;
+        }
+
+        #queueList {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        #queueList li {
+            background-color: white;
+            margin-bottom: 10px;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .priority {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .temple-icon {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 20px;
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            form {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <svg class="temple-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 10 L90 40 L80 40 L80 90 L20 90 L20 40 L10 40 Z" fill="#8B4513"/>
+        <rect x="35" y="50" width="30" height="40" fill="#D2B48C"/>
+        <rect x="45" y="60" width="10" height="30" fill="#4A4A4A"/>
+    </svg>
+    <h1>Sacred Temple Reservation System</h1>
+    <form id="reservationForm">
+        <label for="name">Devotee Name:</label>
+        <input type="text" id="name" required>
+        <label for="status">Devotee Status:</label>
+        <select id="status" required>
+            <option value="President">President</option>
+            <option value="Prime Minister">Prime Minister</option>
+            <option value="Chief Minister">Chief Minister</option>
+            <option value="Minister">Minister</option>
+            <option value="MP">MP</option>
+            <option value="MLA">MLA</option>
+            <option value="Armed Forces">Armed Forces</option>
+            <option value="Government Employee">Government Employee</option>
+            <option value="General Public">General Public</option>
+        </select>
+        <label for="date">Date of Visit:</label>
+        <input type="date" id="date" required>
+        <label for="time">Time of Visit:</label>
+        <input type="time" id="time" required>
+        <button type="submit">Make Sacred Reservation</button>
+    </form>
+    <div>
+        <label for="priorityDate">Select Date for Priority Display:</label>
+        <input type="date" id="priorityDate">
+        <button id="togglePriority">Toggle Priority Display</button>
+    </div>
+    <h2>Reservation Queue</h2>
+    <ul id="queueList"></ul>
+</div>
+<script>
+    let db;
+    let SQL;
+
+    initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/${file}` }).then(function(sql) {
+        SQL = sql;
+        const dbData = localStorage.getItem('templeReservationDB');
+        if (dbData) {
+            db = new SQL.Database(new Uint8Array(JSON.parse(dbData)));
+        } else {
+            db = new SQL.Database();
+            db.run(`CREATE TABLE reservations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                status TEXT,
+                dateTime TEXT
+            )`);
+        }
+        loadReservations();
+    });
+
+    class Reservation {
+        constructor(name, status, dateTime) {
+            this.name = name;
+            this.status = status;
+            this.dateTime = dateTime;
+            this.date = moment(dateTime).format('YYYY-MM-DD');
+        }
+    }
+
+    class TempleReservationSystem {
+        constructor() {
+            this.reservationsByDate = new Map();
+            this.priorityOrder = [
+                "President", "Prime Minister", "Chief Minister", "Minister",
+                "MP", "MLA", "Armed Forces", "Government Employee", "General Public"
+            ];
+        }
+
+        makeReservation(name, status, dateTime) {
+            const reservation = new Reservation(name, status, dateTime);
+            const dateKey = reservation.date;
+
+            db.run('INSERT INTO reservations (name, status, dateTime) VALUES (?, ?, ?)', [name, status, dateTime.toISOString()]);
+            this.saveDatabase();
+            this.loadReservations();
+        }
+
+        loadReservations() {
+            this.reservationsByDate.clear();
+            const result = db.exec('SELECT name, status, dateTime FROM reservations');
+            if (result.length > 0) {
+                for (let i = 0; i < result[0].values.length; i++) {
+                    const [name, status, dateTime] = result[0].values[i];
+                    const reservation = new Reservation(name, status, new Date(dateTime));
+                    const dateKey = reservation.date;
+
+                    if (!this.reservationsByDate.has(dateKey)) {
+                        this.reservationsByDate.set(dateKey, []);
+                    }
+                    this.reservationsByDate.get(dateKey).push(reservation);
+                }
+            }
+            this.sortReservations();
+        }
+
+        sortReservations() {
+            for (const [date, reservations] of this.reservationsByDate) {
+                reservations.sort((a, b) => {
+                    const statusDiff = this.priorityOrder.indexOf(a.status) - this.priorityOrder.indexOf(b.status);
+                    if (statusDiff !== 0) return statusDiff;
+                    return a.dateTime - b.dateTime;
+                });
+            }
+        }
+
+        getQueue(date) {
+            return this.reservationsByDate.get(date) || [];
+        }
+
+        saveDatabase() {
+            const data = db.export();
+            const buffer = new Uint8Array(data);
+            localStorage.setItem('templeReservationDB', JSON.stringify(Array.from(buffer)));
+        }
+    }
+
+    const reservationSystem = new TempleReservationSystem();
+    let showPriority = false;
+
+    document.getElementById('reservationForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const name = document.getElementById('name').value;
+        const status = document.getElementById('status').value;
+        const date = document.getElementById('date').value;
+        const time = document.getElementById('time').value;
+        const dateTime = moment(`${date} ${time}`).toDate(); // Corrected string interpolation
+
+        reservationSystem.makeReservation(name, status, dateTime);
+        updateQueueDisplay(date);
+        this.reset();
+    });
+
+    document.getElementById('togglePriority').addEventListener('click', function() {
+        const selectedDate = document.getElementById('priorityDate').value;
+        showPriority = !showPriority;
+        updateQueueDisplay(selectedDate);
+    });
+
+    function updateQueueDisplay(selectedDate) {
+        const queueList = document.getElementById('queueList');
+        queueList.innerHTML = '';
+        reservationSystem.getQueue(selectedDate).forEach((reservation, index) => {
+            const li = document.createElement('li');
+            const priorityDisplay = showPriority ? ` <span class="priority">(Priority: ${index + 1})</span>` : '';
+            li.innerHTML = `${reservation.name} (${reservation.status}) - ${moment(reservation.dateTime).format('MMMM D, YYYY h:mm A')}${priorityDisplay}`; // Corrected string interpolation
+            queueList.appendChild(li);
+        });
+    }
+
+    function loadReservations() {
+        reservationSystem.loadReservations();
+        const selectedDate = document.getElementById('date').value || new Date().toISOString().split('T')[0];
+        updateQueueDisplay(selectedDate);
+    }
+
+    // Set minimum date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('date').setAttribute('min', today);
+    document.getElementById('priorityDate').setAttribute('min', today);
+</script>
+</body>
+</html>
